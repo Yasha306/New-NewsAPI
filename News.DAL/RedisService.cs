@@ -2,9 +2,9 @@
 using System;
 using System.Collections.Generic;
 
-namespace NewsAPI.Services
+namespace News.DAL
 {
-    public static class RedisService
+    public class RedisService
     {
         private static readonly Lazy<ConnectionMultiplexer> LazyConnection;
 

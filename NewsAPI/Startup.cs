@@ -1,9 +1,11 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.OpenApi.Models;
+using News.DAL;
 using NewsAPI.Middlewares;
 using NewsAPI.Services;
 
@@ -20,8 +22,13 @@ namespace NewsAPI
 
         public void ConfigureServices(IServiceCollection services)
         {
+            services.AddDbContext<NewsDbContext>(options =>
+                options.UseSqlServer(Configuration.GetConnectionString("DbConection")));
+
             services.AddControllers();
-            services.AddSingleton<NewsService>();
+
+            services.AddScoped<NewsService>();
+
             services.AddSingleton<RedisService>();
 
             services.AddSwaggerGen(c =>

@@ -1,17 +1,20 @@
 ﻿using NewsAPI.Abstractions;
-using NewsAPI.Entities;
 using NewsAPI.Entities.Models;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using StackExchange.Redis;
-using NewsAPI.RedisKeys;
+using Microsoft.EntityFrameworkCore;
+using News.DAL;
+using News.DAL.Entities;
 
 namespace NewsAPI.Services
 {
-    public class NewsService : INews
+    public class NewsService : INewsService
     {
         private static IDatabase Redis => RedisService.GetDB;
+
+        private readonly NewsDbContext _newsDbContext;
 
         public static Dictionary<int, string> _creators = new Dictionary<int, string>()
         {
@@ -27,69 +30,128 @@ namespace NewsAPI.Services
            { 10,"Sean Hannity"},
         };
 
-        public async Task<News> Get(long newsId)
+        public NewsService(NewsDbContext newsDbContext)
         {
-            if (!await Redis.KeyExistsAsync(Keys.KeyNews + newsId))
+            _newsDbContext = newsDbContext;
+        }
+
+        public async Task<List<NewsEntity>> GetAll()
+        {
+            return await _newsDbContext.News.ToListAsync();
+        }
+
+        public async Task<NewsEntity> Get(long newsId)
+        {
+            NewsEntity news = new NewsEntity();
+
+            if (await Redis.KeyExistsAsync(Keys.KeyNews + newsId))
+            {
+                var newsHashEntres = await Redis.HashGetAllAsync(Keys.KeyNews + newsId);
+
+                foreach (var hashEntrie in newsHashEntres)
+                {
+                    switch (hashEntrie.Name.ToString())
+                    {
+                        case "Id":
+                            news.Id = (long)hashEntrie.Value;
+                            break;
+                        case "Title":
+                            news.Title = hashEntrie.Value.ToString();
+                            break;
+                        case "Content":
+                            news.Content = hashEntrie.Value.ToString();
+                            break;
+                        case "CreateDate":
+                            news.CreateDate = hashEntrie.Value.ToString();
+                            break;
+                        case "CreatorName":
+                            news.CreatorName = hashEntrie.Value.ToString();
+                            break;
+                        case "UpdateCreatorName":
+                            news.UpdateCreatorName = hashEntrie.Value.ToString();
+                            break;
+                        case "UpdateDate":
+                            news.UpdateDate = hashEntrie.Value.ToString();
+                            break;
+                        default:
+                            break;
+                    }
+                }
+
+                return news;
+            }
+
+            news = await _newsDbContext.News.FindAsync(newsId);
+
+            if (news == null)
             {
                 throw new KeyNotFoundException();
             }
 
-            var newsHashEntres = await Redis.HashGetAllAsync(Keys.KeyNews + newsId);
-
-            News news = new News();
-
-            foreach (var hashEntrie in newsHashEntres)
+            HashEntry[] hashEntries =
             {
-                switch (hashEntrie.Name.ToString())
-                {
-                    case "Title":
-                        news.Title = hashEntrie.Value.ToString();
-                        break;
-                    case "Content":
-                        news.Content = hashEntrie.Value.ToString();
-                        break;
-                    case "CreateDate":
-                        news.CreateDate = hashEntrie.Value.ToString();
-                        break;
-                    case "CreatorName":
-                        news.CreatorName = hashEntrie.Value.ToString();
-                        break;
-                    default:
-                        break;
-                }
-            }
+                new HashEntry(Keys.FieldId, news.Id),
+                new HashEntry(Keys.FieldTitle, news.Title),
+                new HashEntry(Keys.FieldContent, news.Content),
+                new HashEntry(Keys.FieldCreateDate, news.CreateDate??string.Empty),
+                new HashEntry(Keys.FieldCreatorName, news.CreatorName??string.Empty)
+            };
+
+            await Redis.HashSetAsync(Keys.KeyNews + newsId, hashEntries);
 
             return news;
         }
 
-        public async Task Add(AddInputNewsModel news)
+        public async Task Add(AddInputNewsModel addNews)
         {
-            var newsId = await Redis.StringIncrementAsync("NewsId");
-
-            HashEntry[] hashEntries =
+            NewsEntity news = new NewsEntity
             {
-                new HashEntry(Keys.FieldTitle, news.Title),
-                new HashEntry(Keys.FieldContent, news.Content),
-                new HashEntry(Keys.FieldCreateDate, DateTime.Now.ToString()),
-                new HashEntry(Keys.FieldCreatorName, _creators[news.CreatorId])
+                Title = addNews.Title,
+                Content = addNews.Content,
+                CreatorName = _creators[addNews.CreatorId],
+                CreateDate = DateTime.Now.ToString()
             };
 
-            await Redis.HashSetAsync(Keys.KeyNews + newsId, hashEntries);
+            try
+            {
+                var addedNews = await _newsDbContext.News.AddAsync(news);
+                await _newsDbContext.SaveChangesAsync();
+
+                HashEntry[] hashEntries =
+                {
+                    new HashEntry(Keys.FieldId, addedNews.Entity.Id),
+                    new HashEntry(Keys.FieldTitle, addedNews.Entity.Title),
+                    new HashEntry(Keys.FieldContent, addedNews.Entity.Content),
+                    new HashEntry(Keys.FieldCreateDate, addedNews.Entity.CreateDate),
+                    new HashEntry(Keys.FieldCreatorName, addedNews.Entity.CreatorName)
+                };
+
+                await Redis.HashSetAsync(Keys.KeyNews + addedNews.Entity.Id, hashEntries);
+            }
+            catch (DbUpdateException)
+            {
+                throw new DbUpdateException();
+            }
         }
 
-        public async Task Update(long newsId, UpdateInputNewsModel news)
+        public async Task Update(long newsId, UpdateInputNewsModel updateNews)
         {
-            if (!await Redis.KeyExistsAsync(Keys.KeyNews + newsId))
+            var oldNews = await _newsDbContext.News.FindAsync(newsId);
+
+            if (oldNews == null)
             {
                 throw new KeyNotFoundException();
             }
 
+            CheckAndUpdateNews(oldNews, updateNews);
+            await _newsDbContext.SaveChangesAsync();
+
             HashEntry[] hashEntries =
             {
-               new HashEntry(Keys.FieldTitle, news.Title),
-               new HashEntry(Keys.FieldContent, news.Content),
-               new HashEntry(Keys.FieldUpdateCreatorId, news.UpdateCreatorId),
-               new HashEntry(Keys.FieldUpdateDate, DateTime.Now.ToString())
+               new HashEntry(Keys.FieldTitle, updateNews.Title),
+               new HashEntry(Keys.FieldContent, updateNews.Content),
+               new HashEntry(Keys.FieldUpdateDate, DateTime.Now.ToString()),
+               new HashEntry(Keys.FieldUpdaterCreatorName, _creators[updateNews.UpdateCreatorId])
             };
 
             await Redis.HashSetAsync(Keys.KeyNews + newsId, hashEntries);
@@ -97,12 +159,32 @@ namespace NewsAPI.Services
 
         public async Task Delete(long newsId)
         {
-            if (!await Redis.KeyDeleteAsync(Keys.KeyNews + newsId))
+            var news = await _newsDbContext.News.FindAsync(newsId);
+
+            if (news == null)
             {
                 throw new KeyNotFoundException();
             }
 
-            await Redis.SetAddAsync("DeleteIds", newsId);
+            _newsDbContext.News.Remove(news);
+            await _newsDbContext.SaveChangesAsync();
+
+            await Redis.KeyDeleteAsync(Keys.KeyNews + newsId);
+        }
+
+        private void CheckAndUpdateNews(NewsEntity oldNews, UpdateInputNewsModel updateNews)
+        {
+            if (!oldNews.Title.Equals(updateNews))
+            {
+                oldNews.Title = updateNews.Title;
+            }
+            if (!oldNews.Content.Equals(updateNews))
+            {
+                oldNews.Content = updateNews.Title;
+            }
+
+            oldNews.UpdateCreatorName = _creators[updateNews.UpdateCreatorId];
+            oldNews.UpdateDate = DateTime.Now.ToString();
         }
     }
 }

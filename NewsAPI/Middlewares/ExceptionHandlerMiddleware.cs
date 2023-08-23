@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Http;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
@@ -42,13 +43,21 @@ namespace NewsAPI.Middlewares
         {
             if (exception is KeyNotFoundException)
             {
+                _logger.LogInformation("Key not exist");
                 return (HttpStatusCode.NotFound, "Key not exist");
             }
             else if (exception is InvalidOperationException)
             {
+                _logger.LogInformation("Bad request");
                 return (HttpStatusCode.BadRequest, "Bad request");
             }
+            else if (exception is DbUpdateException)
+            {
+                _logger.LogInformation("Dublicate key");
+                return (HttpStatusCode.Conflict, "Dublicate key");
+            }
 
+            _logger.LogInformation("Something went wrong");
             return (HttpStatusCode.InternalServerError, "Something went wrong");
         }
 

@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
+using News.DAL.Entities;
 using NewsAPI.Entities;
 using NewsAPI.Entities.Models;
 using NewsAPI.Services;
@@ -22,8 +23,14 @@ namespace NewsAPI.Controllers
             _newsService = newssService;
         }
 
+        [HttpGet()]
+        public async Task<ActionResult<List<NewsEntity>>> GetAll()
+        {
+            return await _newsService.GetAll();
+        }
+
         [HttpGet("{newsId}")]
-        public async Task<ActionResult<News>> Get(long newsId)
+        public async Task<ActionResult<NewsEntity>> Get(long newsId)
         {
             return await _newsService.Get(newsId);
         }

@@ -1,12 +1,15 @@
-﻿using NewsAPI.Entities;
-using NewsAPI.Entities.Models;
+﻿using NewsAPI.Entities.Models;
+using System.Collections.Generic;
 using System.Threading.Tasks;
+using News.DAL.Entities;
 
 namespace NewsAPI.Abstractions
 {
-    interface INews
+    interface INewsService
     {
-        public Task<News> Get(long newsId);
+        public Task<List<NewsEntity>> GetAll();
+
+        public Task<NewsEntity> Get(long newsId);
 
         public Task Add(AddInputNewsModel news);
 
