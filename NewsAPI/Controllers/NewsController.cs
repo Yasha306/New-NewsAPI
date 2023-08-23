@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using NewsAPI.Entities;
 using NewsAPI.Entities.Models;
 using NewsAPI.Services;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 
 namespace NewsAPI.Controllers
@@ -44,9 +45,9 @@ namespace NewsAPI.Controllers
         }
 
         [HttpDelete("{newsId}")]
-        public async Task<ActionResult> Delete(long newsID)
+        public async Task<ActionResult> Delete(long newsId)
         {
-            await _newsService.Delete(newsID);
+            await _newsService.Delete(newsId);
 
             return NoContent();
         }

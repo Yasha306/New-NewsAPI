@@ -37,6 +37,7 @@ namespace NewsAPI.Middlewares
                 await response.WriteAsync(message);
             }
         }
+
         public (HttpStatusCode code, string message) GetResponse(Exception exception)
         {
             if (exception is KeyNotFoundException)
